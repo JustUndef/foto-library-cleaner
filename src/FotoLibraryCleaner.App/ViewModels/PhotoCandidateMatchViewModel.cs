@@ -5,10 +5,13 @@ namespace FotoLibraryCleaner.App.ViewModels;
 
 public sealed class PhotoCandidateMatchViewModel : ObservableObject
 {
+    private ReviewAction _selectedAction;
+
     public PhotoCandidateMatchViewModel(PhotoDuplicateMatch model)
     {
         Model = model;
         Candidate = new PhotoCandidateViewModel(model.Candidate);
+        _selectedAction = model.Candidate.SuggestedAction;
     }
 
     public PhotoDuplicateMatch Model { get; }
@@ -17,7 +20,13 @@ public sealed class PhotoCandidateMatchViewModel : ObservableObject
 
     public string FileName => Candidate.FileName;
 
-    public string SuggestedAction => Candidate.SuggestedAction;
+    public Array AvailableActions => Enum.GetValues(typeof(ReviewAction));
+
+    public ReviewAction SelectedAction
+    {
+        get => _selectedAction;
+        set => SetProperty(ref _selectedAction, value);
+    }
 
     public string Resolution => Candidate.Resolution;
 

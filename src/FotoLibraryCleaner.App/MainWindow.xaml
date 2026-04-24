@@ -138,10 +138,22 @@
                                   Content="Include subfolders"
                                   IsChecked="{Binding IncludeSubfolders}" />
 
-                        <Button Margin="0,24,0,0"
-                                Padding="12,10"
-                                Command="{Binding ScanCommand}"
-                                Content="Start Scan" />
+                        <Grid Margin="0,24,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0"
+                                    Padding="12,10"
+                                    Command="{Binding ScanCommand}"
+                                    Content="Start Scan" />
+                            <Button Grid.Column="2"
+                                    Padding="12,10"
+                                    Command="{Binding CancelScanCommand}"
+                                    Content="Cancel Scan" />
+                        </Grid>
 
                         <Border Margin="0,24,0,0"
                                 Padding="14"
@@ -364,9 +376,9 @@
                                                 <TextBlock FontWeight="SemiBold"
                                                            Foreground="#FF111827"
                                                            Text="{Binding FileName}" />
-                                                <TextBlock Margin="0,6,0,0"
-                                                           Foreground="#FF667085"
-                                                           Text="{Binding SuggestedAction}" />
+                                                <ComboBox Margin="0,8,0,0"
+                                                          ItemsSource="{Binding AvailableActions}"
+                                                          SelectedItem="{Binding SelectedAction, UpdateSourceTrigger=PropertyChanged}" />
                                                 <TextBlock Margin="0,6,0,0"
                                                            Foreground="#FF667085"
                                                            Text="{Binding Resolution}" />
@@ -455,6 +467,9 @@
                                     <TextBlock Margin="0,6,0,0"
                                                Foreground="#FF475467"
                                                Text="{Binding SelectedGroup.Primary.Reason, StringFormat=Reason: {0}}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Foreground="#FF475467"
+                                               Text="Review action: Keep" />
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -526,6 +541,9 @@
                                     <TextBlock Margin="0,6,0,0"
                                                Foreground="#FF475467"
                                                Text="{Binding SelectedGroup.ComparisonTarget.Reason, StringFormat=Reason: {0}}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Foreground="#FF475467"
+                                               Text="{Binding SelectedGroup.SelectedMatch.SelectedAction, StringFormat=Review action: {0}}" />
                                 </StackPanel>
                             </Grid>
                         </Border>

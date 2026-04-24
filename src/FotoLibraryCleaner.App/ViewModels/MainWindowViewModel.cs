@@ -12,8 +12,10 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly IFolderPickerService _folderPickerService;
     private readonly RelayCommand _browseSourceCommand;
     private readonly RelayCommand _browseDuplicatesCommand;
+    private readonly RelayCommand _cancelScanCommand;
     private readonly AsyncRelayCommand _scanCommand;
 
+    private CancellationTokenSource? _scanCancellationTokenSource;
     private string _sourceFolder = @"D:\Photos";
     private string _duplicatesFolder = @"D:\Photos\duplicates-review";
     private int _threshold = 5;
@@ -39,6 +41,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
         _browseSourceCommand = new RelayCommand(BrowseSourceFolder, () => !IsBusy);
         _browseDuplicatesCommand = new RelayCommand(BrowseDuplicatesFolder, () => !IsBusy);
+        _cancelScanCommand = new RelayCommand(CancelScan, CanCancelScan);
         _scanCommand = new AsyncRelayCommand(StartScanAsync, CanStartScan);
     }
 
@@ -161,7 +164,11 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public AsyncRelayCommand ScanCommand => _scanCommand;
 
+    public RelayCommand CancelScanCommand => _cancelScanCommand;
+
     private bool CanStartScan() => !IsBusy && !string.IsNullOrWhiteSpace(SourceFolder);
+
+    private bool CanCancelScan() => IsBusy && _scanCancellationTokenSource is not null;
 
     private void BrowseSourceFolder()
     {
@@ -188,6 +195,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task StartScanAsync()
     {
+        _scanCancellationTokenSource = new CancellationTokenSource();
         IsBusy = true;
         ScanPhase = "Starting";
         StatusText = "Analyzing images and preparing duplicate groups...";
@@ -220,7 +228,7 @@ public sealed class MainWindowViewModel : ObservableObject
                     : Math.Clamp((double)update.Current / update.Total * 100d, 0d, 100d);
             });
 
-            var groups = await _scanService.ScanAsync(options, progress);
+            var groups = await _scanService.ScanAsync(options, progress, _scanCancellationTokenSource.Token);
 
             Groups.Clear();
             foreach (var group in groups.Select(model => new DuplicateGroupViewModel(model)))
@@ -236,6 +244,11 @@ public sealed class MainWindowViewModel : ObservableObject
                 ? $"Scan finished. No duplicate groups found in {SourceFolder}"
                 : $"Loaded {Groups.Count} duplicate groups from {SourceFolder}";
         }
+        catch (OperationCanceledException)
+        {
+            ScanPhase = "Canceled";
+            StatusText = $"Scan canceled after analyzing {ImagesAnalyzed} images.";
+        }
         catch (Exception ex)
         {
             Groups.Clear();
@@ -246,18 +259,30 @@ public sealed class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            if (ScanPhase != "Failed")
+            _scanCancellationTokenSource?.Dispose();
+            _scanCancellationTokenSource = null;
+
+            if (ScanPhase != "Failed" && ScanPhase != "Canceled")
             {
                 ScanPhase = "Idle";
             }
+
             IsBusy = false;
         }
+    }
+
+    private void CancelScan()
+    {
+        _scanCancellationTokenSource?.Cancel();
+        StatusText = "Cancel requested. Finishing current work item...";
+        NotifyCommandStateChanged();
     }
 
     private void NotifyCommandStateChanged()
     {
         _browseSourceCommand.NotifyCanExecuteChanged();
         _browseDuplicatesCommand.NotifyCanExecuteChanged();
+        _cancelScanCommand.NotifyCanExecuteChanged();
         _scanCommand.NotifyCanExecuteChanged();
     }
 }
