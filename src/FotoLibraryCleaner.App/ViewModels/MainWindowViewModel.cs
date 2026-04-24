@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using FotoLibraryCleaner.App.Infrastructure;
 using FotoLibraryCleaner.App.Services;
 using FotoLibraryCleaner.Core.Models;
@@ -13,6 +14,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly RelayCommand _browseSourceCommand;
     private readonly RelayCommand _browseDuplicatesCommand;
     private readonly RelayCommand _cancelScanCommand;
+    private readonly RelayCommand _exportReviewPlanCommand;
     private readonly AsyncRelayCommand _scanCommand;
 
     private CancellationTokenSource? _scanCancellationTokenSource;
@@ -42,6 +44,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseSourceCommand = new RelayCommand(BrowseSourceFolder, () => !IsBusy);
         _browseDuplicatesCommand = new RelayCommand(BrowseDuplicatesFolder, () => !IsBusy);
         _cancelScanCommand = new RelayCommand(CancelScan, CanCancelScan);
+        _exportReviewPlanCommand = new RelayCommand(ExportReviewPlan, CanExportReviewPlan);
         _scanCommand = new AsyncRelayCommand(StartScanAsync, CanStartScan);
     }
 
@@ -166,9 +169,13 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public RelayCommand CancelScanCommand => _cancelScanCommand;
 
+    public RelayCommand ExportReviewPlanCommand => _exportReviewPlanCommand;
+
     private bool CanStartScan() => !IsBusy && !string.IsNullOrWhiteSpace(SourceFolder);
 
     private bool CanCancelScan() => IsBusy && _scanCancellationTokenSource is not null;
+
+    private bool CanExportReviewPlan() => !IsBusy && Groups.Count > 0 && !string.IsNullOrWhiteSpace(DuplicatesFolder);
 
     private void BrowseSourceFolder()
     {
@@ -278,11 +285,65 @@ public sealed class MainWindowViewModel : ObservableObject
         NotifyCommandStateChanged();
     }
 
+    private void ExportReviewPlan()
+    {
+        Directory.CreateDirectory(DuplicatesFolder);
+
+        var timestamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
+        var outputPath = Path.Combine(DuplicatesFolder, $"review-plan-{timestamp}.csv");
+
+        using var writer = new StreamWriter(outputPath, append: false, System.Text.Encoding.UTF8);
+        writer.WriteLine("GroupId,Role,Action,Distance,Path,Reason");
+
+        foreach (var group in Groups)
+        {
+            WriteReviewRow(writer, group.GroupId, "Primary", ReviewAction.Keep, 0, group.Primary.Path, group.Primary.Reason);
+
+            foreach (var match in group.Matches)
+            {
+                WriteReviewRow(writer, group.GroupId, "Match", match.SelectedAction, match.Distance, match.Candidate.Path, match.Reason);
+            }
+        }
+
+        StatusText = $"Review plan exported to {outputPath}";
+    }
+
+    private static void WriteReviewRow(
+        TextWriter writer,
+        string groupId,
+        string role,
+        ReviewAction action,
+        int distance,
+        string path,
+        string reason)
+    {
+        writer.WriteLine(string.Join(",",
+            EscapeCsv(groupId),
+            EscapeCsv(role),
+            EscapeCsv(action.ToString()),
+            EscapeCsv(distance.ToString()),
+            EscapeCsv(path),
+            EscapeCsv(reason)));
+    }
+
+    private static string EscapeCsv(string value)
+    {
+        if (value.Contains('"'))
+        {
+            value = value.Replace("\"", "\"\"");
+        }
+
+        return value.IndexOfAny([',', '"', '\r', '\n']) >= 0
+            ? $"\"{value}\""
+            : value;
+    }
+
     private void NotifyCommandStateChanged()
     {
         _browseSourceCommand.NotifyCanExecuteChanged();
         _browseDuplicatesCommand.NotifyCanExecuteChanged();
         _cancelScanCommand.NotifyCanExecuteChanged();
+        _exportReviewPlanCommand.NotifyCanExecuteChanged();
         _scanCommand.NotifyCanExecuteChanged();
     }
 }

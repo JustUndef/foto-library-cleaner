@@ -30,5 +30,7 @@ public sealed class PhotoCandidateMatchViewModel : ObservableObject
 
     public string Resolution => Candidate.Resolution;
 
+    public string Reason => Candidate.Reason;
+
     public int Distance => Model.Distance;
 }
