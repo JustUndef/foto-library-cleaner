@@ -172,6 +172,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
 
             var md5 = Convert.ToHexString(MD5.HashData(bytes)).ToLowerInvariant();
             var perceptualHash = ComputeAverageHash(bitmap);
+            var takenAt = TryReadTakenAt(bitmap, fileInfo);
 
             image = new AnalyzedImage(
                 path,
@@ -182,9 +183,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
                 bitmap.Width * bitmap.Height,
                 md5,
                 perceptualHash,
-                fileInfo.LastWriteTimeUtc == DateTime.MinValue
-                    ? null
-                    : new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero).ToLocalTime());
+                takenAt);
 
             return true;
         }
@@ -295,6 +294,60 @@ public sealed class DuplicateScanService : IDuplicateScanService
         var score = (pixelRatio * 0.75d) + (fileSizeRatio * 0.25d);
 
         return Math.Clamp((int)Math.Round(score * 100d, MidpointRounding.AwayFromZero), 1, 100);
+    }
+
+    private static DateTimeOffset? TryReadTakenAt(Image image, FileInfo fileInfo)
+    {
+        var exifDate = TryReadExifDate(image, 0x9003)
+            ?? TryReadExifDate(image, 0x0132);
+
+        if (exifDate is not null)
+        {
+            return exifDate;
+        }
+
+        return fileInfo.LastWriteTimeUtc == DateTime.MinValue
+            ? null
+            : new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero).ToLocalTime();
+    }
+
+    private static DateTimeOffset? TryReadExifDate(Image image, int propertyId)
+    {
+        try
+        {
+            if (!image.PropertyIdList.Contains(propertyId))
+            {
+                return null;
+            }
+
+            var property = image.GetPropertyItem(propertyId)!;
+            if (property.Value is not { Length: > 0 } value)
+            {
+                return null;
+            }
+
+            var raw = System.Text.Encoding.ASCII.GetString(value).Trim('\0', ' ');
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            if (DateTime.TryParseExact(
+                    raw,
+                    "yyyy:MM:dd HH:mm:ss",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeLocal,
+                    out var parsed))
+            {
+                return new DateTimeOffset(parsed);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static ulong ComputeAverageHash(Bitmap source)
