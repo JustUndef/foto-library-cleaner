@@ -3,6 +3,7 @@ namespace FotoLibraryCleaner.Core.Models;
 public sealed record DuplicateGroup(
     string GroupId,
     PhotoCandidate Primary,
-    IReadOnlyList<PhotoCandidate> Matches,
+    IReadOnlyList<PhotoDuplicateMatch> Matches,
     int MaxDistance,
-    long EstimatedSavingsBytes);
+    long EstimatedSavingsBytes,
+    bool IsExactMatch);

@@ -287,7 +287,7 @@
                                     </ItemsPanelTemplate>
                                 </ListBox.ItemsPanel>
                                 <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type viewModels:PhotoCandidateViewModel}">
+                                    <DataTemplate DataType="{x:Type viewModels:PhotoCandidateMatchViewModel}">
                                         <Border Margin="0,0,12,0"
                                                 Padding="12"
                                                 Background="#FFF8FAFC"
@@ -304,6 +304,9 @@
                                                 <TextBlock Margin="0,6,0,0"
                                                            Foreground="#FF667085"
                                                            Text="{Binding Resolution}" />
+                                                <TextBlock Margin="0,6,0,0"
+                                                           Foreground="#FF667085"
+                                                           Text="{Binding Distance, StringFormat=Distance: {0}}" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -355,7 +358,13 @@
                                                Text="{Binding SelectedGroup.Primary.FileSize, StringFormat=File size: {0}}" />
                                     <TextBlock Margin="0,6,0,0"
                                                Foreground="#FF475467"
+                                               Text="{Binding SelectedGroup.Primary.PixelCount, StringFormat=Pixels: {0}}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Foreground="#FF475467"
                                                Text="{Binding SelectedGroup.Primary.Format, StringFormat=Format: {0}}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Foreground="#FF475467"
+                                               Text="{Binding SelectedGroup.Primary.Md5, StringFormat=MD5: {0}}" />
                                     <TextBlock Margin="0,6,0,0"
                                                Foreground="#FF475467"
                                                Text="{Binding SelectedGroup.Primary.TakenAt, StringFormat=Taken at: {0}}" />
@@ -405,7 +414,13 @@
                                                Text="{Binding SelectedGroup.ComparisonTarget.FileSize, StringFormat=File size: {0}}" />
                                     <TextBlock Margin="0,6,0,0"
                                                Foreground="#FF475467"
+                                               Text="{Binding SelectedGroup.ComparisonTarget.PixelCount, StringFormat=Pixels: {0}}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Foreground="#FF475467"
                                                Text="{Binding SelectedGroup.ComparisonTarget.Format, StringFormat=Format: {0}}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Foreground="#FF475467"
+                                               Text="{Binding SelectedGroup.ComparisonTarget.Md5, StringFormat=MD5: {0}}" />
                                     <TextBlock Margin="0,6,0,0"
                                                Foreground="#FF475467"
                                                Text="{Binding SelectedGroup.ComparisonTarget.TakenAt, StringFormat=Taken at: {0}}" />

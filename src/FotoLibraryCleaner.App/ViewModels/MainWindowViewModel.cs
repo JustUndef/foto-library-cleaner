@@ -169,7 +169,16 @@ public sealed class MainWindowViewModel : ObservableObject
 
             SelectedGroup = Groups.FirstOrDefault();
             RaisePropertyChanged(nameof(GroupCount));
-            StatusText = $"Loaded {Groups.Count} duplicate groups from {SourceFolder}";
+            StatusText = Groups.Count == 0
+                ? $"Scan finished. No duplicate groups found in {SourceFolder}"
+                : $"Loaded {Groups.Count} duplicate groups from {SourceFolder}";
+        }
+        catch (Exception ex)
+        {
+            Groups.Clear();
+            SelectedGroup = null;
+            RaisePropertyChanged(nameof(GroupCount));
+            StatusText = ex.Message;
         }
         finally
         {

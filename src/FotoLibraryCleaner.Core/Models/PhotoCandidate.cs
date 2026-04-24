@@ -6,6 +6,8 @@ public sealed record PhotoCandidate(
     long FileSizeBytes,
     int Width,
     int Height,
+    int PixelCount,
+    string Md5,
     string Hash,
     int QualityScore,
     DateTimeOffset? TakenAt,

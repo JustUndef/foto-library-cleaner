@@ -20,11 +20,15 @@ public sealed class PhotoCandidateViewModel : ObservableObject
 
     public string Resolution => $"{Model.Width} x {Model.Height}";
 
+    public string PixelCount => $"{Model.PixelCount:N0} px";
+
     public string FileSize => $"{Model.FileSizeBytes / 1024d / 1024d:F2} MB";
 
     public string TakenAt => Model.TakenAt?.ToString("dd.MM.yyyy HH:mm") ?? "Unknown";
 
     public string Hash => Model.Hash;
+
+    public string Md5 => Model.Md5;
 
     public string SuggestedAction => Model.SuggestedAction.ToString();
 

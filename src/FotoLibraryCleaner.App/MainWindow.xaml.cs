@@ -11,7 +11,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = new MainWindowViewModel(
-            new MockDuplicateScanService(),
+            new DuplicateScanService(),
             new FolderPickerService());
     }
 }
