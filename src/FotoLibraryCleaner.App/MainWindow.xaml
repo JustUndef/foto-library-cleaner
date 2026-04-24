@@ -336,10 +336,25 @@
 
                                 <Border Background="#FFEFF2F6"
                                         CornerRadius="4">
-                                    <Viewbox Stretch="Uniform">
-                                        <TextBlock Foreground="#FF98A2B3"
-                                                   Text="Primary preview" />
-                                    </Viewbox>
+                                    <Grid>
+                                        <Image Source="{Binding SelectedGroup.Primary.PreviewImage}"
+                                               Stretch="Uniform" />
+                                        <TextBlock HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="#FF98A2B3"
+                                                   Text="No preview available">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedGroup.Primary.HasPreview}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
                                 </Border>
 
                                 <StackPanel Grid.Row="1" Margin="0,16,0,0">
@@ -392,10 +407,25 @@
 
                                 <Border Background="#FFEFF2F6"
                                         CornerRadius="4">
-                                    <Viewbox Stretch="Uniform">
-                                        <TextBlock Foreground="#FF98A2B3"
-                                                   Text="Candidate preview" />
-                                    </Viewbox>
+                                    <Grid>
+                                        <Image Source="{Binding SelectedGroup.ComparisonTarget.PreviewImage}"
+                                               Stretch="Uniform" />
+                                        <TextBlock HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="#FF98A2B3"
+                                                   Text="No preview available">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedGroup.ComparisonTarget.HasPreview}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
                                 </Border>
 
                                 <StackPanel Grid.Row="1" Margin="0,16,0,0">
