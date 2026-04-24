@@ -22,6 +22,12 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _includeSubfolders = true;
     private bool _isBusy;
     private string _statusText = "Ready to scan";
+    private string _scanPhase = "Idle";
+    private int _filesDiscovered;
+    private int _imagesAnalyzed;
+    private int _imagesSkipped;
+    private int _groupsFoundLive;
+    private double _progressValue;
     private DuplicateGroupViewModel? _selectedGroup;
 
     public MainWindowViewModel(IDuplicateScanService scanService, IFolderPickerService folderPickerService)
@@ -103,6 +109,42 @@ public sealed class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _statusText, value);
     }
 
+    public string ScanPhase
+    {
+        get => _scanPhase;
+        private set => SetProperty(ref _scanPhase, value);
+    }
+
+    public int FilesDiscovered
+    {
+        get => _filesDiscovered;
+        private set => SetProperty(ref _filesDiscovered, value);
+    }
+
+    public int ImagesAnalyzed
+    {
+        get => _imagesAnalyzed;
+        private set => SetProperty(ref _imagesAnalyzed, value);
+    }
+
+    public int ImagesSkipped
+    {
+        get => _imagesSkipped;
+        private set => SetProperty(ref _imagesSkipped, value);
+    }
+
+    public int GroupsFoundLive
+    {
+        get => _groupsFoundLive;
+        private set => SetProperty(ref _groupsFoundLive, value);
+    }
+
+    public double ProgressValue
+    {
+        get => _progressValue;
+        private set => SetProperty(ref _progressValue, value);
+    }
+
     public DuplicateGroupViewModel? SelectedGroup
     {
         get => _selectedGroup;
@@ -147,7 +189,13 @@ public sealed class MainWindowViewModel : ObservableObject
     private async Task StartScanAsync()
     {
         IsBusy = true;
+        ScanPhase = "Starting";
         StatusText = "Analyzing images and preparing duplicate groups...";
+        FilesDiscovered = 0;
+        ImagesAnalyzed = 0;
+        ImagesSkipped = 0;
+        GroupsFoundLive = 0;
+        ProgressValue = 0;
 
         try
         {
@@ -159,7 +207,20 @@ public sealed class MainWindowViewModel : ObservableObject
                 DryRun,
                 IncludeSubfolders);
 
-            var groups = await _scanService.ScanAsync(options);
+            var progress = new Progress<ScanProgress>(update =>
+            {
+                ScanPhase = update.Phase;
+                FilesDiscovered = update.FilesDiscovered;
+                ImagesAnalyzed = update.ImagesAnalyzed;
+                ImagesSkipped = update.ImagesSkipped;
+                GroupsFoundLive = update.GroupsFound;
+                StatusText = update.Message;
+                ProgressValue = update.Total <= 0
+                    ? 0
+                    : Math.Clamp((double)update.Current / update.Total * 100d, 0d, 100d);
+            });
+
+            var groups = await _scanService.ScanAsync(options, progress);
 
             Groups.Clear();
             foreach (var group in groups.Select(model => new DuplicateGroupViewModel(model)))
@@ -169,6 +230,8 @@ public sealed class MainWindowViewModel : ObservableObject
 
             SelectedGroup = Groups.FirstOrDefault();
             RaisePropertyChanged(nameof(GroupCount));
+            GroupsFoundLive = Groups.Count;
+            ProgressValue = 100;
             StatusText = Groups.Count == 0
                 ? $"Scan finished. No duplicate groups found in {SourceFolder}"
                 : $"Loaded {Groups.Count} duplicate groups from {SourceFolder}";
@@ -178,10 +241,15 @@ public sealed class MainWindowViewModel : ObservableObject
             Groups.Clear();
             SelectedGroup = null;
             RaisePropertyChanged(nameof(GroupCount));
+            ScanPhase = "Failed";
             StatusText = ex.Message;
         }
         finally
         {
+            if (ScanPhase != "Failed")
+            {
+                ScanPhase = "Idle";
+            }
             IsBusy = false;
         }
     }

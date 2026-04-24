@@ -4,5 +4,8 @@ namespace FotoLibraryCleaner.Core.Services;
 
 public interface IDuplicateScanService
 {
-    Task<IReadOnlyList<DuplicateGroup>> ScanAsync(ScanOptions options, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DuplicateGroup>> ScanAsync(
+        ScanOptions options,
+        IProgress<ScanProgress>? progress = null,
+        CancellationToken cancellationToken = default);
 }

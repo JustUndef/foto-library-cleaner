@@ -32,13 +32,43 @@ public sealed class DuplicateScanService : IDuplicateScanService
             throw new DirectoryNotFoundException($"Source folder not found: {options.SourceFolder}");
         }
 
-        return await Task.Run(() => ScanCore(options, cancellationToken), cancellationToken);
+        return await Task.Run(() => ScanCore(options, null, cancellationToken), cancellationToken);
     }
 
-    private static IReadOnlyList<DuplicateGroup> ScanCore(ScanOptions options, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<DuplicateGroup>> ScanAsync(
+        ScanOptions options,
+        IProgress<ScanProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (string.IsNullOrWhiteSpace(options.SourceFolder))
+        {
+            throw new InvalidOperationException("Please choose a source folder before starting the scan.");
+        }
+
+        if (!Directory.Exists(options.SourceFolder))
+        {
+            throw new DirectoryNotFoundException($"Source folder not found: {options.SourceFolder}");
+        }
+
+        return await Task.Run(() => ScanCore(options, progress, cancellationToken), cancellationToken);
+    }
+
+    private static IReadOnlyList<DuplicateGroup> ScanCore(ScanOptions options, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
     {
         var paths = CollectImagePaths(options, cancellationToken);
-        var analyzedImages = AnalyzeImages(paths, cancellationToken);
+        progress?.Report(new ScanProgress(
+            "Discovering",
+            paths.Count,
+            0,
+            0,
+            0,
+            paths.Count,
+            paths.Count,
+            $"Discovered {paths.Count} supported image files."));
+
+        var analyzedImages = AnalyzeImages(paths, progress, cancellationToken);
 
         var groups = new List<DuplicateGroup>();
         var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -63,6 +93,15 @@ public sealed class DuplicateScanService : IDuplicateScanService
 
             groups.Add(BuildDuplicateGroup(groupImages, $"EX-{exactGroupIndex:0000}", isExactMatch: true));
             exactGroupIndex++;
+            progress?.Report(new ScanProgress(
+                "Grouping",
+                paths.Count,
+                analyzedImages.Count,
+                paths.Count - analyzedImages.Count,
+                groups.Count,
+                groups.Count,
+                analyzedImages.Count,
+                $"Built {groups.Count} duplicate groups so far."));
         }
 
         var remaining = analyzedImages
@@ -114,8 +153,29 @@ public sealed class DuplicateScanService : IDuplicateScanService
 
                 groups.Add(BuildDuplicateGroup(groupImages, $"PH-{similarGroupIndex:0000}", isExactMatch: false));
                 similarGroupIndex++;
+                progress?.Report(new ScanProgress(
+                    "Grouping",
+                    paths.Count,
+                    analyzedImages.Count,
+                    paths.Count - analyzedImages.Count,
+                    groups.Count,
+                    groups.Count,
+                    analyzedImages.Count,
+                    $"Built {groups.Count} duplicate groups so far."));
             }
         }
+
+        progress?.Report(new ScanProgress(
+            "Completed",
+            paths.Count,
+            analyzedImages.Count,
+            paths.Count - analyzedImages.Count,
+            groups.Count,
+            paths.Count,
+            paths.Count,
+            groups.Count == 0
+                ? "Scan completed without duplicates."
+                : $"Scan completed with {groups.Count} duplicate groups."));
 
         return groups
             .OrderByDescending(group => group.EstimatedSavingsBytes)
@@ -135,9 +195,11 @@ public sealed class DuplicateScanService : IDuplicateScanService
         return imagePaths;
     }
 
-    private static List<AnalyzedImage> AnalyzeImages(IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    private static List<AnalyzedImage> AnalyzeImages(IReadOnlyList<string> paths, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
     {
         var results = new ConcurrentBag<AnalyzedImage>();
+        var analyzedCount = 0;
+        var skippedCount = 0;
 
         Parallel.ForEach(
             paths,
@@ -151,6 +213,29 @@ public sealed class DuplicateScanService : IDuplicateScanService
                 if (TryAnalyzeImage(path, out var image))
                 {
                     results.Add(image);
+                    var current = Interlocked.Increment(ref analyzedCount);
+                    progress?.Report(new ScanProgress(
+                        "Analyzing",
+                        paths.Count,
+                        current,
+                        skippedCount,
+                        0,
+                        current,
+                        paths.Count,
+                        $"Analyzed {current} of {paths.Count} images."));
+                }
+                else
+                {
+                    var skipped = Interlocked.Increment(ref skippedCount);
+                    progress?.Report(new ScanProgress(
+                        "Analyzing",
+                        paths.Count,
+                        analyzedCount,
+                        skipped,
+                        0,
+                        analyzedCount + skipped,
+                        paths.Count,
+                        $"Analyzed {analyzedCount} images, skipped {skipped}."));
                 }
             });
 
