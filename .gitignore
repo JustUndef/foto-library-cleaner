@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.tmp
+artifacts/
+.dotnet-cli-home/
+.nuget/
+build-diag.log
+build-diag2.log
+build-diag3.log
+dotnet-install.ps1
+manual-write-test.txt
