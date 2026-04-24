@@ -256,7 +256,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
             using var bitmap = new Bitmap(memoryStream);
 
             var md5 = Convert.ToHexString(MD5.HashData(bytes)).ToLowerInvariant();
-            var perceptualHash = ComputeAverageHash(bitmap);
+            var perceptualHash = ComputeDifferenceHash(bitmap);
             var takenAt = TryReadTakenAt(bitmap, fileInfo);
 
             image = new AnalyzedImage(
@@ -435,40 +435,44 @@ public sealed class DuplicateScanService : IDuplicateScanService
         return null;
     }
 
-    private static ulong ComputeAverageHash(Bitmap source)
+    private static ulong ComputeDifferenceHash(Bitmap source)
     {
-        using var resized = new Bitmap(8, 8, PixelFormat.Format24bppRgb);
+        using var resized = new Bitmap(9, 8, PixelFormat.Format24bppRgb);
         using (var graphics = Graphics.FromImage(resized))
         {
             graphics.CompositingQuality = CompositingQuality.HighQuality;
             graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
             graphics.SmoothingMode = SmoothingMode.HighQuality;
-            graphics.DrawImage(source, 0, 0, 8, 8);
+            graphics.DrawImage(source, 0, 0, 9, 8);
         }
 
-        Span<byte> values = stackalloc byte[64];
+        Span<byte> values = stackalloc byte[72];
+
+        for (var y = 0; y < 8; y++)
+        {
+            for (var x = 0; x < 9; x++)
+            {
+                var pixel = resized.GetPixel(x, y);
+                var grayscale = (byte)Math.Clamp((pixel.R + pixel.G + pixel.B) / 3, 0, 255);
+                values[(y * 9) + x] = grayscale;
+            }
+        }
+
+        ulong hash = 0;
         var index = 0;
-        var total = 0;
 
         for (var y = 0; y < 8; y++)
         {
             for (var x = 0; x < 8; x++)
             {
-                var pixel = resized.GetPixel(x, y);
-                var grayscale = (byte)Math.Clamp((pixel.R + pixel.G + pixel.B) / 3, 0, 255);
-                values[index++] = grayscale;
-                total += grayscale;
-            }
-        }
+                var left = values[(y * 9) + x];
+                var right = values[(y * 9) + x + 1];
+                if (left > right)
+                {
+                    hash |= 1UL << index;
+                }
 
-        var average = total / 64d;
-        ulong hash = 0;
-
-        for (var i = 0; i < values.Length; i++)
-        {
-            if (values[i] >= average)
-            {
-                hash |= 1UL << i;
+                index++;
             }
         }
 
