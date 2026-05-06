@@ -15,6 +15,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly RelayCommand _browseDuplicatesCommand;
     private readonly RelayCommand _cancelScanCommand;
     private readonly RelayCommand _exportReviewPlanCommand;
+    private readonly AsyncRelayCommand _applyReviewActionsCommand;
     private readonly AsyncRelayCommand _scanCommand;
 
     private CancellationTokenSource? _scanCancellationTokenSource;
@@ -46,6 +47,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseDuplicatesCommand = new RelayCommand(BrowseDuplicatesFolder, () => !IsBusy);
         _cancelScanCommand = new RelayCommand(CancelScan, CanCancelScan);
         _exportReviewPlanCommand = new RelayCommand(ExportReviewPlan, CanExportReviewPlan);
+        _applyReviewActionsCommand = new AsyncRelayCommand(ApplyReviewActionsAsync, CanApplyReviewActions);
         _scanCommand = new AsyncRelayCommand(StartScanAsync, CanStartScan);
     }
 
@@ -184,11 +186,15 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public RelayCommand ExportReviewPlanCommand => _exportReviewPlanCommand;
 
+    public AsyncRelayCommand ApplyReviewActionsCommand => _applyReviewActionsCommand;
+
     private bool CanStartScan() => !IsBusy && !string.IsNullOrWhiteSpace(SourceFolder);
 
     private bool CanCancelScan() => IsBusy && _scanCancellationTokenSource is not null;
 
     private bool CanExportReviewPlan() => !IsBusy && Groups.Count > 0 && !string.IsNullOrWhiteSpace(DuplicatesFolder);
+
+    private bool CanApplyReviewActions() => !IsBusy && Groups.Count > 0 && !string.IsNullOrWhiteSpace(DuplicatesFolder);
 
     private void BrowseSourceFolder()
     {
@@ -322,6 +328,146 @@ public sealed class MainWindowViewModel : ObservableObject
         StatusText = $"Review plan exported to {outputPath}";
     }
 
+    private async Task ApplyReviewActionsAsync()
+    {
+        var actionRequests = Groups
+            .SelectMany(group => group.Matches
+                .Where(match => match.SelectedAction is ReviewAction.Move or ReviewAction.Delete)
+                .Select(match => new PendingReviewAction(group, match)))
+            .ToList();
+
+        if (actionRequests.Count == 0)
+        {
+            StatusText = "No review actions to apply. Mark duplicates as Move or Delete first.";
+            return;
+        }
+
+        if (DryRun)
+        {
+            var moveCount = actionRequests.Count(request => request.Match.SelectedAction == ReviewAction.Move);
+            var deleteCount = actionRequests.Count(request => request.Match.SelectedAction == ReviewAction.Delete);
+            var estimatedBytes = actionRequests.Sum(request => request.Match.Candidate.Model.FileSizeBytes);
+            StatusText = $"Dry run: would move {moveCount}, delete {deleteCount}, and free about {estimatedBytes / 1024d / 1024d:F2} MB.";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ScanPhase = "Applying";
+            StatusText = $"Applying {actionRequests.Count} reviewed actions...";
+
+            var result = await Task.Run(() => ApplyReviewedFiles(actionRequests));
+
+            foreach (var request in result.AppliedRequests)
+            {
+                request.Group.Matches.Remove(request.Match);
+            }
+
+            foreach (var emptyGroup in Groups.Where(group => group.Matches.Count == 0).ToList())
+            {
+                Groups.Remove(emptyGroup);
+            }
+
+            SelectedGroup = Groups.FirstOrDefault();
+            RaisePropertyChanged(nameof(GroupCount));
+            GroupsFoundLive = Groups.Count;
+            StatusText = result.FailedCount == 0
+                ? $"Applied review actions. Moved {result.MovedCount}, deleted {result.DeletedCount}."
+                : $"Applied review actions with issues. Moved {result.MovedCount}, deleted {result.DeletedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.";
+        }
+        catch (Exception ex)
+        {
+            ScanPhase = "Failed";
+            StatusText = $"Failed to apply review actions: {ex.Message}";
+        }
+        finally
+        {
+            if (ScanPhase != "Failed")
+            {
+                ScanPhase = "Idle";
+            }
+
+            IsBusy = false;
+        }
+    }
+
+    private ReviewExecutionResult ApplyReviewedFiles(IReadOnlyList<PendingReviewAction> actionRequests)
+    {
+        Directory.CreateDirectory(DuplicatesFolder);
+
+        var appliedRequests = new List<PendingReviewAction>();
+        var movedCount = 0;
+        var deletedCount = 0;
+        var skippedCount = 0;
+        var failedCount = 0;
+
+        foreach (var request in actionRequests)
+        {
+            var sourcePath = request.Match.Candidate.Path;
+
+            try
+            {
+                if (!File.Exists(sourcePath))
+                {
+                    failedCount++;
+                    continue;
+                }
+
+                if (request.Match.SelectedAction == ReviewAction.Move)
+                {
+                    var destinationPath = GetUniqueDestinationPath(sourcePath, DuplicatesFolder);
+                    if (string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(destinationPath), StringComparison.OrdinalIgnoreCase))
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    File.Move(sourcePath, destinationPath);
+                    movedCount++;
+                    appliedRequests.Add(request);
+                }
+                else if (request.Match.SelectedAction == ReviewAction.Delete)
+                {
+                    File.Delete(sourcePath);
+                    deletedCount++;
+                    appliedRequests.Add(request);
+                }
+            }
+            catch
+            {
+                failedCount++;
+            }
+        }
+
+        return new ReviewExecutionResult(appliedRequests, movedCount, deletedCount, skippedCount, failedCount);
+    }
+
+    private static string GetUniqueDestinationPath(string sourcePath, string duplicatesFolder)
+    {
+        var fileName = Path.GetFileName(sourcePath);
+        var destinationPath = Path.Combine(duplicatesFolder, fileName);
+
+        if (!File.Exists(destinationPath))
+        {
+            return destinationPath;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var timestamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
+        var index = 1;
+
+        do
+        {
+            destinationPath = Path.Combine(duplicatesFolder, $"{name}-{timestamp}-{index}{extension}");
+            index++;
+        }
+        while (File.Exists(destinationPath));
+
+        return destinationPath;
+    }
+
     private static void WriteReviewRow(
         TextWriter writer,
         string groupId,
@@ -358,6 +504,16 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseDuplicatesCommand.NotifyCanExecuteChanged();
         _cancelScanCommand.NotifyCanExecuteChanged();
         _exportReviewPlanCommand.NotifyCanExecuteChanged();
+        _applyReviewActionsCommand.NotifyCanExecuteChanged();
         _scanCommand.NotifyCanExecuteChanged();
     }
+
+    private sealed record PendingReviewAction(DuplicateGroupViewModel Group, PhotoCandidateMatchViewModel Match);
+
+    private sealed record ReviewExecutionResult(
+        IReadOnlyList<PendingReviewAction> AppliedRequests,
+        int MovedCount,
+        int DeletedCount,
+        int SkippedCount,
+        int FailedCount);
 }
