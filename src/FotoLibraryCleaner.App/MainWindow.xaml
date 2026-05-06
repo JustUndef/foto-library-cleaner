@@ -68,7 +68,7 @@
 
         <Grid Grid.Row="1" Margin="24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="320" />
+                <ColumnDefinition Width="370" />
                 <ColumnDefinition Width="16" />
                 <ColumnDefinition Width="360" />
                 <ColumnDefinition Width="16" />
@@ -81,8 +81,9 @@
                     BorderBrush="#FFD8DDE6"
                     BorderThickness="1"
                     CornerRadius="6">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <ScrollViewer Padding="0,0,12,0"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,6,0">
                         <TextBlock FontSize="20"
                                    FontWeight="SemiBold"
                                    Foreground="#FF111827"
@@ -119,14 +120,63 @@
                         <TextBlock Margin="0,16,0,6"
                                    Foreground="#FF5B6472"
                                    Text="Threshold" />
-                        <DockPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="76" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
                             <TextBox Width="72"
                                      Padding="10,8"
                                      Text="{Binding Threshold, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBlock Margin="12,8,0,0"
+                            <TextBlock Grid.Column="2"
+                                       Margin="0,3,0,0"
                                        Foreground="#FF5B6472"
+                                       TextWrapping="Wrap"
                                        Text="0 = exact, 5 = balanced, 10+ = more permissive" />
+                        </Grid>
+
+                        <DockPanel Margin="0,16,0,6">
+                            <TextBlock Foreground="#FF5B6472"
+                                       Text="Hash algorithm" />
+                            <Border Width="18"
+                                    Height="18"
+                                    Margin="8,0,0,0"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Background="#FFF2F4F7"
+                                    BorderBrush="#FFD0D5DD"
+                                    BorderThickness="1"
+                                    CornerRadius="9"
+                                    ToolTipService.InitialShowDelay="200">
+                                <Border.ToolTip>
+                                    <ToolTip MaxWidth="380">
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold"
+                                                       Text="Choosing a hash algorithm" />
+                                            <TextBlock Margin="0,8,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Text="PerceptualHash is the robust option. It compares the image's visual structure and is better for WhatsApp or messenger duplicates, resized copies, and strongly compressed photos." />
+                                            <TextBlock Margin="0,8,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Text="DifferenceHash is faster. It compares local brightness changes and works well for near-identical files, light recompression, and quick scans." />
+                                            <TextBlock Margin="0,8,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Text="Recommended default: PerceptualHash for cleanup quality, DifferenceHash when speed matters more than catching every transformed copy." />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Border.ToolTip>
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FF475467"
+                                           Text="i" />
+                            </Border>
                         </DockPanel>
+                        <ComboBox Padding="10,8"
+                                  ItemsSource="{Binding HashAlgorithms}"
+                                  SelectedItem="{Binding HashAlgorithm, UpdateSourceTrigger=PropertyChanged}" />
 
                         <CheckBox Margin="0,18,0,0"
                                   Content="Use fast mode (LSH bucketing)"
@@ -141,7 +191,7 @@
                         <Grid Margin="0,24,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="14" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 

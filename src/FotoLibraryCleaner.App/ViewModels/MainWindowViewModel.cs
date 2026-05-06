@@ -21,6 +21,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _sourceFolder = @"D:\Photos";
     private string _duplicatesFolder = @"D:\Photos\duplicates-review";
     private int _threshold = 5;
+    private PhotoHashAlgorithm _hashAlgorithm = PhotoHashAlgorithm.PerceptualHash;
     private bool _useFastMode = true;
     private bool _dryRun = true;
     private bool _includeSubfolders = true;
@@ -52,6 +53,12 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<DuplicateGroupViewModel> Groups { get; }
 
+    public IReadOnlyList<PhotoHashAlgorithm> HashAlgorithms { get; } =
+    [
+        PhotoHashAlgorithm.PerceptualHash,
+        PhotoHashAlgorithm.DifferenceHash,
+    ];
+
     public string SourceFolder
     {
         get => _sourceFolder;
@@ -74,6 +81,12 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _threshold;
         set => SetProperty(ref _threshold, Math.Clamp(value, 0, 20));
+    }
+
+    public PhotoHashAlgorithm HashAlgorithm
+    {
+        get => _hashAlgorithm;
+        set => SetProperty(ref _hashAlgorithm, value);
     }
 
     public bool UseFastMode
@@ -218,6 +231,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 SourceFolder,
                 DuplicatesFolder,
                 Threshold,
+                HashAlgorithm,
                 UseFastMode,
                 DryRun,
                 IncludeSubfolders);

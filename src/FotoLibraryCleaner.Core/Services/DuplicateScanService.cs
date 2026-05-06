@@ -68,7 +68,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
             paths.Count,
             $"Discovered {paths.Count} supported image files."));
 
-        var analyzedImages = AnalyzeImages(paths, progress, cancellationToken);
+        var analyzedImages = AnalyzeImages(paths, options.HashAlgorithm, progress, cancellationToken);
 
         var groups = new List<DuplicateGroup>();
         var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -195,7 +195,11 @@ public sealed class DuplicateScanService : IDuplicateScanService
         return imagePaths;
     }
 
-    private static List<AnalyzedImage> AnalyzeImages(IReadOnlyList<string> paths, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
+    private static List<AnalyzedImage> AnalyzeImages(
+        IReadOnlyList<string> paths,
+        PhotoHashAlgorithm hashAlgorithm,
+        IProgress<ScanProgress>? progress,
+        CancellationToken cancellationToken)
     {
         var results = new ConcurrentBag<AnalyzedImage>();
         var analyzedCount = 0;
@@ -210,7 +214,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
             },
             path =>
             {
-                if (TryAnalyzeImage(path, out var image))
+                if (TryAnalyzeImage(path, hashAlgorithm, out var image))
                 {
                     results.Add(image);
                     var current = Interlocked.Increment(ref analyzedCount);
@@ -244,7 +248,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
             .ToList();
     }
 
-    private static bool TryAnalyzeImage(string path, out AnalyzedImage image)
+    private static bool TryAnalyzeImage(string path, PhotoHashAlgorithm hashAlgorithm, out AnalyzedImage image)
     {
         image = default!;
 
@@ -256,7 +260,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
             using var bitmap = new Bitmap(memoryStream);
 
             var md5 = Convert.ToHexString(MD5.HashData(bytes)).ToLowerInvariant();
-            var perceptualHash = ComputeDifferenceHash(bitmap);
+            var perceptualHash = ComputeHash(bitmap, hashAlgorithm);
             var takenAt = TryReadTakenAt(bitmap, fileInfo);
 
             image = new AnalyzedImage(
@@ -435,6 +439,15 @@ public sealed class DuplicateScanService : IDuplicateScanService
         return null;
     }
 
+    private static ulong ComputeHash(Bitmap source, PhotoHashAlgorithm hashAlgorithm)
+    {
+        return hashAlgorithm switch
+        {
+            PhotoHashAlgorithm.PerceptualHash => ComputePerceptualHash(source),
+            _ => ComputeDifferenceHash(source),
+        };
+    }
+
     private static ulong ComputeDifferenceHash(Bitmap source)
     {
         using var resized = new Bitmap(9, 8, PixelFormat.Format24bppRgb);
@@ -477,6 +490,77 @@ public sealed class DuplicateScanService : IDuplicateScanService
         }
 
         return hash;
+    }
+
+    private static ulong ComputePerceptualHash(Bitmap source)
+    {
+        const int sampleSize = 32;
+        const int hashSize = 8;
+
+        using var resized = new Bitmap(sampleSize, sampleSize, PixelFormat.Format24bppRgb);
+        using (var graphics = Graphics.FromImage(resized))
+        {
+            graphics.CompositingQuality = CompositingQuality.HighQuality;
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.SmoothingMode = SmoothingMode.HighQuality;
+            graphics.DrawImage(source, 0, 0, sampleSize, sampleSize);
+        }
+
+        var pixels = new double[sampleSize, sampleSize];
+        for (var y = 0; y < sampleSize; y++)
+        {
+            for (var x = 0; x < sampleSize; x++)
+            {
+                var pixel = resized.GetPixel(x, y);
+                pixels[x, y] = (pixel.R * 0.299d) + (pixel.G * 0.587d) + (pixel.B * 0.114d);
+            }
+        }
+
+        var coefficients = new double[hashSize * hashSize];
+        var index = 0;
+        for (var v = 0; v < hashSize; v++)
+        {
+            for (var u = 0; u < hashSize; u++)
+            {
+                coefficients[index++] = ComputeDctCoefficient(pixels, u, v, sampleSize);
+            }
+        }
+
+        var median = coefficients
+            .Skip(1)
+            .Order()
+            .ElementAt((coefficients.Length - 1) / 2);
+
+        ulong hash = 0;
+        for (var bit = 0; bit < coefficients.Length; bit++)
+        {
+            if (coefficients[bit] > median)
+            {
+                hash |= 1UL << bit;
+            }
+        }
+
+        return hash;
+    }
+
+    private static double ComputeDctCoefficient(double[,] pixels, int u, int v, int sampleSize)
+    {
+        var sum = 0d;
+
+        for (var y = 0; y < sampleSize; y++)
+        {
+            for (var x = 0; x < sampleSize; x++)
+            {
+                sum += pixels[x, y]
+                    * Math.Cos(((2 * x) + 1) * u * Math.PI / (2 * sampleSize))
+                    * Math.Cos(((2 * y) + 1) * v * Math.PI / (2 * sampleSize));
+            }
+        }
+
+        var scaleU = u == 0 ? 1d / Math.Sqrt(2d) : 1d;
+        var scaleV = v == 0 ? 1d / Math.Sqrt(2d) : 1d;
+
+        return 0.25d * scaleU * scaleV * sum;
     }
 
     private static int HammingDistance(ulong left, ulong right)
