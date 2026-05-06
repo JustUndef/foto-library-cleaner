@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FotoLibraryCleaner.App.Infrastructure;
 using FotoLibraryCleaner.App.Services;
 using FotoLibraryCleaner.Core.Models;
@@ -15,8 +17,15 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly RelayCommand _browseDuplicatesCommand;
     private readonly RelayCommand _cancelScanCommand;
     private readonly RelayCommand _exportReviewPlanCommand;
+    private readonly RelayCommand _saveReviewSessionCommand;
+    private readonly RelayCommand _loadReviewSessionCommand;
     private readonly AsyncRelayCommand _applyReviewActionsCommand;
     private readonly AsyncRelayCommand _scanCommand;
+    private static readonly JsonSerializerOptions SessionJsonOptions = new(JsonSerializerDefaults.General)
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     private CancellationTokenSource? _scanCancellationTokenSource;
     private string _sourceFolder = @"D:\Photos";
@@ -47,8 +56,12 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseDuplicatesCommand = new RelayCommand(BrowseDuplicatesFolder, () => !IsBusy);
         _cancelScanCommand = new RelayCommand(CancelScan, CanCancelScan);
         _exportReviewPlanCommand = new RelayCommand(ExportReviewPlan, CanExportReviewPlan);
+        _saveReviewSessionCommand = new RelayCommand(SaveReviewSession, CanSaveReviewSession);
+        _loadReviewSessionCommand = new RelayCommand(LoadReviewSession, CanLoadReviewSession);
         _applyReviewActionsCommand = new AsyncRelayCommand(ApplyReviewActionsAsync, CanApplyReviewActions);
         _scanCommand = new AsyncRelayCommand(StartScanAsync, CanStartScan);
+
+        TryLoadReviewSession(silent: true);
     }
 
     public string Title => "Foto Library Cleaner";
@@ -186,6 +199,10 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public RelayCommand ExportReviewPlanCommand => _exportReviewPlanCommand;
 
+    public RelayCommand SaveReviewSessionCommand => _saveReviewSessionCommand;
+
+    public RelayCommand LoadReviewSessionCommand => _loadReviewSessionCommand;
+
     public AsyncRelayCommand ApplyReviewActionsCommand => _applyReviewActionsCommand;
 
     private bool CanStartScan() => !IsBusy && !string.IsNullOrWhiteSpace(SourceFolder);
@@ -195,6 +212,10 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool CanExportReviewPlan() => !IsBusy && Groups.Count > 0 && !string.IsNullOrWhiteSpace(DuplicatesFolder);
 
     private bool CanApplyReviewActions() => !IsBusy && Groups.Count > 0 && !string.IsNullOrWhiteSpace(DuplicatesFolder);
+
+    private bool CanSaveReviewSession() => !IsBusy && Groups.Count > 0;
+
+    private bool CanLoadReviewSession() => !IsBusy && File.Exists(GetSessionPath());
 
     private void BrowseSourceFolder()
     {
@@ -270,6 +291,7 @@ public sealed class MainWindowViewModel : ObservableObject
             StatusText = Groups.Count == 0
                 ? $"Scan finished. No duplicate groups found in {SourceFolder}"
                 : $"Loaded {Groups.Count} duplicate groups from {SourceFolder}";
+            TrySaveReviewSession(silent: true);
         }
         catch (OperationCanceledException)
         {
@@ -328,6 +350,19 @@ public sealed class MainWindowViewModel : ObservableObject
         StatusText = $"Review plan exported to {outputPath}";
     }
 
+    private void SaveReviewSession()
+    {
+        if (TrySaveReviewSession(silent: false))
+        {
+            StatusText = $"Review session saved to {GetSessionPath()}";
+        }
+    }
+
+    private void LoadReviewSession()
+    {
+        TryLoadReviewSession(silent: false);
+    }
+
     private async Task ApplyReviewActionsAsync()
     {
         var actionRequests = Groups
@@ -375,6 +410,7 @@ public sealed class MainWindowViewModel : ObservableObject
             StatusText = result.FailedCount == 0
                 ? $"Applied review actions. Moved {result.MovedCount}, deleted {result.DeletedCount}."
                 : $"Applied review actions with issues. Moved {result.MovedCount}, deleted {result.DeletedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.";
+            TrySaveReviewSession(silent: true);
         }
         catch (Exception ex)
         {
@@ -429,6 +465,12 @@ public sealed class MainWindowViewModel : ObservableObject
                 }
                 else if (request.Match.SelectedAction == ReviewAction.Delete)
                 {
+                    if (!IsSafeToDelete(request))
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
                     File.Delete(sourcePath);
                     deletedCount++;
                     appliedRequests.Add(request);
@@ -441,6 +483,25 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         return new ReviewExecutionResult(appliedRequests, movedCount, deletedCount, skippedCount, failedCount);
+    }
+
+    private static bool IsSafeToDelete(PendingReviewAction request)
+    {
+        var primary = request.Group.Primary.Model;
+        var candidate = request.Match.Candidate.Model;
+
+        if (string.Equals(primary.Path, candidate.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (candidate.PixelCount < primary.PixelCount)
+        {
+            return true;
+        }
+
+        return candidate.PixelCount == primary.PixelCount
+            && candidate.FileSizeBytes <= primary.FileSizeBytes;
     }
 
     private static string GetUniqueDestinationPath(string sourcePath, string duplicatesFolder)
@@ -466,6 +527,135 @@ public sealed class MainWindowViewModel : ObservableObject
         while (File.Exists(destinationPath));
 
         return destinationPath;
+    }
+
+    private bool TrySaveReviewSession(bool silent)
+    {
+        try
+        {
+            var session = new ReviewSessionDto(
+                DateTimeOffset.Now,
+                SourceFolder,
+                DuplicatesFolder,
+                Threshold,
+                HashAlgorithm,
+                UseFastMode,
+                DryRun,
+                IncludeSubfolders,
+                Groups.Select(ToSessionGroup).ToList());
+
+            var sessionPath = GetSessionPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(sessionPath)!);
+            File.WriteAllText(sessionPath, JsonSerializer.Serialize(session, SessionJsonOptions));
+            NotifyCommandStateChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!silent)
+            {
+                StatusText = $"Failed to save review session: {ex.Message}";
+            }
+
+            return false;
+        }
+    }
+
+    private bool TryLoadReviewSession(bool silent)
+    {
+        try
+        {
+            var sessionPath = GetSessionPath();
+            if (!File.Exists(sessionPath))
+            {
+                if (!silent)
+                {
+                    StatusText = "No saved review session found.";
+                }
+
+                return false;
+            }
+
+            var session = JsonSerializer.Deserialize<ReviewSessionDto>(File.ReadAllText(sessionPath), SessionJsonOptions);
+            if (session is null)
+            {
+                if (!silent)
+                {
+                    StatusText = "Saved review session is empty or invalid.";
+                }
+
+                return false;
+            }
+
+            SourceFolder = session.SourceFolder;
+            DuplicatesFolder = session.DuplicatesFolder;
+            Threshold = session.Threshold;
+            HashAlgorithm = session.HashAlgorithm;
+            UseFastMode = session.UseFastMode;
+            DryRun = session.DryRun;
+            IncludeSubfolders = session.IncludeSubfolders;
+
+            Groups.Clear();
+            foreach (var group in session.Groups.Select(FromSessionGroup))
+            {
+                Groups.Add(new DuplicateGroupViewModel(group));
+            }
+
+            SelectedGroup = Groups.FirstOrDefault();
+            RaisePropertyChanged(nameof(GroupCount));
+            GroupsFoundLive = Groups.Count;
+            FilesDiscovered = 0;
+            ImagesAnalyzed = 0;
+            ImagesSkipped = 0;
+            ProgressValue = Groups.Count > 0 ? 100 : 0;
+            ScanPhase = "Idle";
+            StatusText = $"Loaded saved review session from {session.SavedAt:dd.MM.yyyy HH:mm}.";
+            NotifyCommandStateChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!silent)
+            {
+                StatusText = $"Failed to load review session: {ex.Message}";
+            }
+
+            return false;
+        }
+    }
+
+    private static SessionGroupDto ToSessionGroup(DuplicateGroupViewModel group)
+    {
+        return new SessionGroupDto(
+            group.GroupId,
+            group.Primary.Model,
+            group.Matches.Select(match => new SessionMatchDto(match.Candidate.Model, match.Distance, match.SelectedAction)).ToList(),
+            group.Model.MaxDistance,
+            group.Model.EstimatedSavingsBytes,
+            group.Model.IsExactMatch);
+    }
+
+    private static DuplicateGroup FromSessionGroup(SessionGroupDto group)
+    {
+        var matches = group.Matches
+            .Select(match => new PhotoDuplicateMatch(match.Candidate with { SuggestedAction = match.SelectedAction }, match.Distance))
+            .ToList();
+
+        return new DuplicateGroup(
+            group.GroupId,
+            group.Primary with { SuggestedAction = ReviewAction.Keep },
+            matches,
+            group.MaxDistance,
+            group.EstimatedSavingsBytes,
+            group.IsExactMatch);
+    }
+
+    private static string GetSessionPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "FotoLibraryCleaner",
+            "review-session.json");
     }
 
     private static void WriteReviewRow(
@@ -504,6 +694,8 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseDuplicatesCommand.NotifyCanExecuteChanged();
         _cancelScanCommand.NotifyCanExecuteChanged();
         _exportReviewPlanCommand.NotifyCanExecuteChanged();
+        _saveReviewSessionCommand.NotifyCanExecuteChanged();
+        _loadReviewSessionCommand.NotifyCanExecuteChanged();
         _applyReviewActionsCommand.NotifyCanExecuteChanged();
         _scanCommand.NotifyCanExecuteChanged();
     }
@@ -516,4 +708,28 @@ public sealed class MainWindowViewModel : ObservableObject
         int DeletedCount,
         int SkippedCount,
         int FailedCount);
+
+    private sealed record ReviewSessionDto(
+        DateTimeOffset SavedAt,
+        string SourceFolder,
+        string DuplicatesFolder,
+        int Threshold,
+        PhotoHashAlgorithm HashAlgorithm,
+        bool UseFastMode,
+        bool DryRun,
+        bool IncludeSubfolders,
+        IReadOnlyList<SessionGroupDto> Groups);
+
+    private sealed record SessionGroupDto(
+        string GroupId,
+        PhotoCandidate Primary,
+        IReadOnlyList<SessionMatchDto> Matches,
+        int MaxDistance,
+        long EstimatedSavingsBytes,
+        bool IsExactMatch);
+
+    private sealed record SessionMatchDto(
+        PhotoCandidate Candidate,
+        int Distance,
+        ReviewAction SelectedAction);
 }
