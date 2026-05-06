@@ -6,9 +6,9 @@
         xmlns:viewModels="clr-namespace:FotoLibraryCleaner.App.ViewModels"
         mc:Ignorable="d"
         Title="Foto Library Cleaner"
-        Height="900"
+        Height="1040"
         Width="1480"
-        MinHeight="720"
+        MinHeight="900"
         MinWidth="1220"
         Background="#FFF5F6F8">
     <Grid>
@@ -19,28 +19,71 @@
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
-                Padding="24"
+                Padding="24,18"
                 Background="White"
                 BorderBrush="#FFD8DDE6"
                 BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel>
-                    <TextBlock FontSize="28"
-                               FontWeight="SemiBold"
-                               Foreground="#FF111827"
-                               Text="Foto Library Cleaner" />
-                    <TextBlock Margin="0,8,0,0"
-                               Foreground="#FF5B6472"
-                               Text="Windows review app for duplicate photo detection, metadata checks, and safe cleanup workflows." />
-                </StackPanel>
+                <TextBlock VerticalAlignment="Center"
+                           FontSize="28"
+                           FontWeight="SemiBold"
+                           Foreground="#FF111827"
+                           Text="Foto Library Cleaner" />
 
                 <Border Grid.Column="1"
-                        Padding="12,8"
+                        Margin="64,0,24,0"
+                        Padding="14,8"
+                        VerticalAlignment="Center"
+                        Background="#FFF2F4F7"
+                        CornerRadius="6">
+                    <UniformGrid Columns="4">
+                        <StackPanel Margin="0,0,18,0">
+                            <TextBlock FontSize="11"
+                                       Foreground="#FF667085"
+                                       Text="Discovered" />
+                            <TextBlock Margin="0,2,0,0"
+                                       FontWeight="SemiBold"
+                                       Foreground="#FF111827"
+                                       Text="{Binding FilesDiscovered}" />
+                        </StackPanel>
+                        <StackPanel Margin="0,0,18,0">
+                            <TextBlock FontSize="11"
+                                       Foreground="#FF667085"
+                                       Text="Analyzed" />
+                            <TextBlock Margin="0,2,0,0"
+                                       FontWeight="SemiBold"
+                                       Foreground="#FF111827"
+                                       Text="{Binding ImagesAnalyzed}" />
+                        </StackPanel>
+                        <StackPanel Margin="0,0,18,0">
+                            <TextBlock FontSize="11"
+                                       Foreground="#FF667085"
+                                       Text="Skipped" />
+                            <TextBlock Margin="0,2,0,0"
+                                       FontWeight="SemiBold"
+                                       Foreground="#FF111827"
+                                       Text="{Binding ImagesSkipped}" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock FontSize="11"
+                                       Foreground="#FF667085"
+                                       Text="Groups" />
+                            <TextBlock Margin="0,2,0,0"
+                                       FontWeight="SemiBold"
+                                       Foreground="#FF111827"
+                                       Text="{Binding GroupsFoundLive}" />
+                        </StackPanel>
+                    </UniformGrid>
+                </Border>
+
+                <Border Grid.Column="2"
+                        Padding="14,8"
                         Background="#FFF2F4F7"
                         CornerRadius="6">
                     <StackPanel>
@@ -53,10 +96,12 @@
                                        Text="{Binding ScanPhase}" />
                         </StackPanel>
                         <TextBlock Margin="0,6,0,0"
+                                   Width="430"
                                    Foreground="#FF5B6472"
-                                   Text="{Binding StatusText}" />
+                                   Text="{Binding StatusText}"
+                                   TextTrimming="CharacterEllipsis" />
                         <ProgressBar Margin="0,10,0,0"
-                                     Width="320"
+                                     Width="430"
                                      Height="8"
                                      Minimum="0"
                                      Maximum="100"
@@ -188,57 +233,8 @@
                                   Content="Include subfolders"
                                   IsChecked="{Binding IncludeSubfolders}" />
 
-                        <Grid Margin="0,24,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="14" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-
-                            <Button Grid.Column="0"
-                                    Padding="12,10"
-                                    Command="{Binding ScanCommand}"
-                                    Content="{Binding ScanButtonText}" />
-                            <Button Grid.Column="2"
-                                    Padding="12,10"
-                                    Command="{Binding CancelScanCommand}"
-                                    Content="Pause Scan" />
-                        </Grid>
-
-                        <Button Margin="0,10,0,0"
-                                Padding="12,10"
-                                Command="{Binding ClearScanCacheCommand}"
-                                Content="Clear Scan Cache" />
-
-                        <Button Margin="0,12,0,0"
-                                Padding="12,10"
-                                Command="{Binding ExportReviewPlanCommand}"
-                                Content="Export Review Plan CSV" />
-
-                        <Button Margin="0,10,0,0"
-                                Padding="12,10"
-                                Command="{Binding ApplyReviewActionsCommand}"
-                                Content="Apply Review Actions" />
-
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="14" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-
-                            <Button Grid.Column="0"
-                                    Padding="12,10"
-                                    Command="{Binding SaveReviewSessionCommand}"
-                                    Content="Save Session" />
-                            <Button Grid.Column="2"
-                                    Padding="12,10"
-                                    Command="{Binding LoadReviewSessionCommand}"
-                                    Content="Load Session" />
-                        </Grid>
-
                         <Border Margin="0,24,0,0"
-                                Padding="14"
+                                Padding="12"
                                 Background="#FFF8FAFC"
                                 BorderBrush="#FFE4E7EC"
                                 BorderThickness="1"
@@ -246,76 +242,82 @@
                             <StackPanel>
                                 <TextBlock FontWeight="SemiBold"
                                            Foreground="#FF111827"
-                                           Text="Scan status" />
-                                <UniformGrid Margin="0,12,0,0"
-                                             Columns="2"
-                                             Rows="2">
-                                    <Border Margin="0,0,10,10"
-                                            Padding="10"
-                                            Background="White"
-                                            BorderBrush="#FFE4E7EC"
-                                            BorderThickness="1"
-                                            CornerRadius="6">
-                                        <StackPanel>
-                                            <TextBlock Foreground="#FF667085"
-                                                       Text="Discovered" />
-                                            <TextBlock Margin="0,6,0,0"
-                                                       FontSize="18"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="#FF111827"
-                                                       Text="{Binding FilesDiscovered}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Margin="0,0,0,10"
-                                            Padding="10"
-                                            Background="White"
-                                            BorderBrush="#FFE4E7EC"
-                                            BorderThickness="1"
-                                            CornerRadius="6">
-                                        <StackPanel>
-                                            <TextBlock Foreground="#FF667085"
-                                                       Text="Analyzed" />
-                                            <TextBlock Margin="0,6,0,0"
-                                                       FontSize="18"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="#FF111827"
-                                                       Text="{Binding ImagesAnalyzed}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Margin="0,0,10,0"
-                                            Padding="10"
-                                            Background="White"
-                                            BorderBrush="#FFE4E7EC"
-                                            BorderThickness="1"
-                                            CornerRadius="6">
-                                        <StackPanel>
-                                            <TextBlock Foreground="#FF667085"
-                                                       Text="Skipped" />
-                                            <TextBlock Margin="0,6,0,0"
-                                                       FontSize="18"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="#FF111827"
-                                                       Text="{Binding ImagesSkipped}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Padding="10"
-                                            Background="White"
-                                            BorderBrush="#FFE4E7EC"
-                                            BorderThickness="1"
-                                            CornerRadius="6">
-                                        <StackPanel>
-                                            <TextBlock Foreground="#FF667085"
-                                                       Text="Groups" />
-                                            <TextBlock Margin="0,6,0,0"
-                                                       FontSize="18"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="#FF111827"
-                                                       Text="{Binding GroupsFoundLive}" />
-                                        </StackPanel>
-                                    </Border>
-                                </UniformGrid>
+                                           Text="Scan" />
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button Grid.Column="0"
+                                            Padding="12,10"
+                                            Command="{Binding ScanCommand}"
+                                            Content="{Binding ScanButtonText}" />
+                                    <Button Grid.Column="2"
+                                            Padding="12,10"
+                                            Command="{Binding CancelScanCommand}"
+                                            Content="Pause" />
+                                </Grid>
+
+                                <Button Margin="0,10,0,0"
+                                        Padding="12,10"
+                                        Command="{Binding ClearScanCacheCommand}"
+                                        Content="Clear Cache" />
                             </StackPanel>
                         </Border>
+
+                        <Border Margin="0,14,0,0"
+                                Padding="12"
+                                Background="#FFF8FAFC"
+                                BorderBrush="#FFE4E7EC"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Foreground="#FF111827"
+                                           Text="Review" />
+                                <Button Margin="0,10,0,0"
+                                        Padding="12,10"
+                                        Command="{Binding ExportReviewPlanCommand}"
+                                        Content="Export Plan CSV" />
+
+                                <Button Margin="0,10,0,0"
+                                        Padding="12,10"
+                                        Command="{Binding ApplyReviewActionsCommand}"
+                                        Content="Apply Actions" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,14,0,0"
+                                Padding="12"
+                                Background="#FFF8FAFC"
+                                BorderBrush="#FFE4E7EC"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Foreground="#FF111827"
+                                           Text="Session" />
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button Grid.Column="0"
+                                            Padding="12,10"
+                                            Command="{Binding SaveReviewSessionCommand}"
+                                            Content="Save" />
+                                    <Button Grid.Column="2"
+                                            Padding="12,10"
+                                            Command="{Binding LoadReviewSessionCommand}"
+                                            Content="Load" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
                     </StackPanel>
                 </ScrollViewer>
             </Border>
