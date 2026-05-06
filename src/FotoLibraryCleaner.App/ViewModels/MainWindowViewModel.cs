@@ -16,6 +16,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly RelayCommand _browseSourceCommand;
     private readonly RelayCommand _browseDuplicatesCommand;
     private readonly RelayCommand _cancelScanCommand;
+    private readonly RelayCommand _clearScanCacheCommand;
     private readonly RelayCommand _exportReviewPlanCommand;
     private readonly RelayCommand _saveReviewSessionCommand;
     private readonly RelayCommand _loadReviewSessionCommand;
@@ -55,6 +56,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseSourceCommand = new RelayCommand(BrowseSourceFolder, () => !IsBusy);
         _browseDuplicatesCommand = new RelayCommand(BrowseDuplicatesFolder, () => !IsBusy);
         _cancelScanCommand = new RelayCommand(CancelScan, CanCancelScan);
+        _clearScanCacheCommand = new RelayCommand(ClearScanCache, CanClearScanCache);
         _exportReviewPlanCommand = new RelayCommand(ExportReviewPlan, CanExportReviewPlan);
         _saveReviewSessionCommand = new RelayCommand(SaveReviewSession, CanSaveReviewSession);
         _loadReviewSessionCommand = new RelayCommand(LoadReviewSession, CanLoadReviewSession);
@@ -81,7 +83,7 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             if (SetProperty(ref _sourceFolder, value))
             {
-                NotifyCommandStateChanged();
+                NotifyScanCacheStateChanged();
             }
         }
     }
@@ -101,7 +103,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public PhotoHashAlgorithm HashAlgorithm
     {
         get => _hashAlgorithm;
-        set => SetProperty(ref _hashAlgorithm, value);
+        set
+        {
+            if (SetProperty(ref _hashAlgorithm, value))
+            {
+                NotifyScanCacheStateChanged();
+            }
+        }
     }
 
     public bool UseFastMode
@@ -119,7 +127,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IncludeSubfolders
     {
         get => _includeSubfolders;
-        set => SetProperty(ref _includeSubfolders, value);
+        set
+        {
+            if (SetProperty(ref _includeSubfolders, value))
+            {
+                NotifyScanCacheStateChanged();
+            }
+        }
     }
 
     public bool IsBusy
@@ -189,6 +203,10 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public string EmptyStateText => "No scan results yet. Choose a folder and start the first analysis.";
 
+    public bool HasScanCache => !string.IsNullOrWhiteSpace(SourceFolder) && ScanAnalysisCache.HasCache(CreateCurrentScanOptions());
+
+    public string ScanButtonText => HasScanCache ? "Resume Scan" : "Start Scan";
+
     public RelayCommand BrowseSourceCommand => _browseSourceCommand;
 
     public RelayCommand BrowseDuplicatesCommand => _browseDuplicatesCommand;
@@ -196,6 +214,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public AsyncRelayCommand ScanCommand => _scanCommand;
 
     public RelayCommand CancelScanCommand => _cancelScanCommand;
+
+    public RelayCommand ClearScanCacheCommand => _clearScanCacheCommand;
 
     public RelayCommand ExportReviewPlanCommand => _exportReviewPlanCommand;
 
@@ -208,6 +228,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool CanStartScan() => !IsBusy && !string.IsNullOrWhiteSpace(SourceFolder);
 
     private bool CanCancelScan() => IsBusy && _scanCancellationTokenSource is not null;
+
+    private bool CanClearScanCache() => !IsBusy && HasScanCache;
 
     private bool CanExportReviewPlan() => !IsBusy && Groups.Count > 0 && !string.IsNullOrWhiteSpace(DuplicatesFolder);
 
@@ -254,14 +276,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
         try
         {
-            var options = new ScanOptions(
-                SourceFolder,
-                DuplicatesFolder,
-                Threshold,
-                HashAlgorithm,
-                UseFastMode,
-                DryRun,
-                IncludeSubfolders);
+            var options = CreateCurrentScanOptions();
 
             var progress = new Progress<ScanProgress>(update =>
             {
@@ -292,11 +307,12 @@ public sealed class MainWindowViewModel : ObservableObject
                 ? $"Scan finished. No duplicate groups found in {SourceFolder}"
                 : $"Loaded {Groups.Count} duplicate groups from {SourceFolder}";
             TrySaveReviewSession(silent: true);
+            NotifyScanCacheStateChanged();
         }
         catch (OperationCanceledException)
         {
-            ScanPhase = "Canceled";
-            StatusText = $"Scan canceled after analyzing {ImagesAnalyzed} images.";
+            ScanPhase = "Paused";
+            StatusText = $"Scan paused after analyzing {ImagesAnalyzed} images. Start Scan will resume from saved analysis checkpoints.";
         }
         catch (Exception ex)
         {
@@ -317,14 +333,34 @@ public sealed class MainWindowViewModel : ObservableObject
             }
 
             IsBusy = false;
+            NotifyScanCacheStateChanged();
         }
     }
 
     private void CancelScan()
     {
         _scanCancellationTokenSource?.Cancel();
-        StatusText = "Cancel requested. Finishing current work item...";
+        StatusText = "Pause requested. Saving current analysis checkpoint...";
         NotifyCommandStateChanged();
+    }
+
+    private void ClearScanCache()
+    {
+        try
+        {
+            var deleted = ScanAnalysisCache.DeleteCache(CreateCurrentScanOptions());
+            StatusText = deleted
+                ? $"Cleared scan cache for {SourceFolder}."
+                : $"No scan cache found for {SourceFolder}.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Failed to clear scan cache: {ex.Message}";
+        }
+        finally
+        {
+            NotifyScanCacheStateChanged();
+        }
     }
 
     private void ExportReviewPlan()
@@ -658,6 +694,18 @@ public sealed class MainWindowViewModel : ObservableObject
             "review-session.json");
     }
 
+    private ScanOptions CreateCurrentScanOptions()
+    {
+        return new ScanOptions(
+            SourceFolder,
+            DuplicatesFolder,
+            Threshold,
+            HashAlgorithm,
+            UseFastMode,
+            DryRun,
+            IncludeSubfolders);
+    }
+
     private static void WriteReviewRow(
         TextWriter writer,
         string groupId,
@@ -693,11 +741,19 @@ public sealed class MainWindowViewModel : ObservableObject
         _browseSourceCommand.NotifyCanExecuteChanged();
         _browseDuplicatesCommand.NotifyCanExecuteChanged();
         _cancelScanCommand.NotifyCanExecuteChanged();
+        _clearScanCacheCommand.NotifyCanExecuteChanged();
         _exportReviewPlanCommand.NotifyCanExecuteChanged();
         _saveReviewSessionCommand.NotifyCanExecuteChanged();
         _loadReviewSessionCommand.NotifyCanExecuteChanged();
         _applyReviewActionsCommand.NotifyCanExecuteChanged();
         _scanCommand.NotifyCanExecuteChanged();
+    }
+
+    private void NotifyScanCacheStateChanged()
+    {
+        RaisePropertyChanged(nameof(HasScanCache));
+        RaisePropertyChanged(nameof(ScanButtonText));
+        NotifyCommandStateChanged();
     }
 
     private sealed record PendingReviewAction(DuplicateGroupViewModel Group, PhotoCandidateMatchViewModel Match);

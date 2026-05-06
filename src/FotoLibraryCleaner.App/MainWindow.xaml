@@ -198,12 +198,17 @@
                             <Button Grid.Column="0"
                                     Padding="12,10"
                                     Command="{Binding ScanCommand}"
-                                    Content="Start Scan" />
+                                    Content="{Binding ScanButtonText}" />
                             <Button Grid.Column="2"
                                     Padding="12,10"
                                     Command="{Binding CancelScanCommand}"
-                                    Content="Cancel Scan" />
+                                    Content="Pause Scan" />
                         </Grid>
+
+                        <Button Margin="0,10,0,0"
+                                Padding="12,10"
+                                Command="{Binding ClearScanCacheCommand}"
+                                Content="Clear Scan Cache" />
 
                         <Button Margin="0,12,0,0"
                                 Padding="12,10"

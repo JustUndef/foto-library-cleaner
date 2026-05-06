@@ -3,6 +3,8 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FotoLibraryCleaner.Core.Models;
 
 namespace FotoLibraryCleaner.Core.Services;
@@ -17,6 +19,12 @@ public sealed class DuplicateScanService : IDuplicateScanService
         ".gif",
         ".bmp",
     ];
+
+    private static readonly JsonSerializerOptions CacheJsonOptions = new(JsonSerializerDefaults.General)
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     public async Task<IReadOnlyList<DuplicateGroup>> ScanAsync(ScanOptions options, CancellationToken cancellationToken = default)
     {
@@ -68,7 +76,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
             paths.Count,
             $"Discovered {paths.Count} supported image files."));
 
-        var analyzedImages = AnalyzeImages(paths, options.HashAlgorithm, progress, cancellationToken);
+        var analyzedImages = AnalyzeImages(paths, options, progress, cancellationToken);
 
         var groups = new List<DuplicateGroup>();
         var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -197,56 +205,199 @@ public sealed class DuplicateScanService : IDuplicateScanService
 
     private static List<AnalyzedImage> AnalyzeImages(
         IReadOnlyList<string> paths,
-        PhotoHashAlgorithm hashAlgorithm,
+        ScanOptions options,
         IProgress<ScanProgress>? progress,
         CancellationToken cancellationToken)
     {
         var results = new ConcurrentBag<AnalyzedImage>();
+        var cachePath = GetAnalysisCachePath(options);
+        var cache = LoadAnalysisCache(cachePath, options);
+        var cacheGate = new object();
+        var remainingPaths = new List<string>();
+        var cachedCount = 0;
         var analyzedCount = 0;
         var skippedCount = 0;
 
-        Parallel.ForEach(
-            paths,
-            new ParallelOptions
+        foreach (var path in paths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var fileInfo = new FileInfo(path);
+            if (TryGetCachedImage(cache, fileInfo, out var cachedImage))
             {
-                CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = Environment.ProcessorCount,
-            },
-            path =>
+                results.Add(cachedImage);
+                cachedCount++;
+                analyzedCount++;
+            }
+            else
             {
-                if (TryAnalyzeImage(path, hashAlgorithm, out var image))
+                remainingPaths.Add(path);
+            }
+        }
+
+        if (cachedCount > 0)
+        {
+            progress?.Report(new ScanProgress(
+                "Analyzing",
+                paths.Count,
+                analyzedCount,
+                0,
+                0,
+                analyzedCount,
+                paths.Count,
+                $"Reused {cachedCount} cached image analyses. {remainingPaths.Count} images left to analyze."));
+        }
+
+        try
+        {
+            Parallel.ForEach(
+                remainingPaths,
+                new ParallelOptions
                 {
-                    results.Add(image);
-                    var current = Interlocked.Increment(ref analyzedCount);
-                    progress?.Report(new ScanProgress(
-                        "Analyzing",
-                        paths.Count,
-                        current,
-                        skippedCount,
-                        0,
-                        current,
-                        paths.Count,
-                        $"Analyzed {current} of {paths.Count} images."));
-                }
-                else
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = Environment.ProcessorCount,
+                },
+                path =>
                 {
-                    var skipped = Interlocked.Increment(ref skippedCount);
-                    progress?.Report(new ScanProgress(
-                        "Analyzing",
-                        paths.Count,
-                        analyzedCount,
-                        skipped,
-                        0,
-                        analyzedCount + skipped,
-                        paths.Count,
-                        $"Analyzed {analyzedCount} images, skipped {skipped}."));
-                }
-            });
+                    if (TryAnalyzeImage(path, options.HashAlgorithm, out var image))
+                    {
+                        results.Add(image);
+                        lock (cacheGate)
+                        {
+                            cache.Items[image.Path] = ToCacheItem(image);
+                        }
+
+                        var current = Interlocked.Increment(ref analyzedCount);
+                        progress?.Report(new ScanProgress(
+                            "Analyzing",
+                            paths.Count,
+                            current,
+                            skippedCount,
+                            0,
+                            current,
+                            paths.Count,
+                            $"Analyzed {current} of {paths.Count} images."));
+                    }
+                    else
+                    {
+                        var skipped = Interlocked.Increment(ref skippedCount);
+                        progress?.Report(new ScanProgress(
+                            "Analyzing",
+                            paths.Count,
+                            analyzedCount,
+                            skipped,
+                            0,
+                            analyzedCount + skipped,
+                            paths.Count,
+                            $"Analyzed {analyzedCount} images, skipped {skipped}."));
+                    }
+                });
+        }
+        catch (OperationCanceledException)
+        {
+            lock (cacheGate)
+            {
+                SaveAnalysisCache(cachePath, cache);
+            }
+
+            throw;
+        }
+
+        lock (cacheGate)
+        {
+            SaveAnalysisCache(cachePath, cache);
+        }
 
         return results
             .OrderBy(image => image.Path, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    private static AnalysisCache LoadAnalysisCache(string cachePath, ScanOptions options)
+    {
+        try
+        {
+            if (!File.Exists(cachePath))
+            {
+                return CreateAnalysisCache(options);
+            }
+
+            var cache = JsonSerializer.Deserialize<AnalysisCache>(File.ReadAllText(cachePath), CacheJsonOptions);
+            if (cache is null
+                || cache.SchemaVersion != 1
+                || !string.Equals(cache.SourceFolder, options.SourceFolder, StringComparison.OrdinalIgnoreCase)
+                || cache.IncludeSubfolders != options.IncludeSubfolders
+                || cache.HashAlgorithm != options.HashAlgorithm)
+            {
+                return CreateAnalysisCache(options);
+            }
+
+            return cache;
+        }
+        catch
+        {
+            return CreateAnalysisCache(options);
+        }
+    }
+
+    private static AnalysisCache CreateAnalysisCache(ScanOptions options)
+    {
+        return new AnalysisCache(
+            1,
+            options.SourceFolder,
+            options.IncludeSubfolders,
+            options.HashAlgorithm,
+            new Dictionary<string, CachedAnalyzedImage>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static bool TryGetCachedImage(AnalysisCache cache, FileInfo fileInfo, out AnalyzedImage image)
+    {
+        image = default!;
+
+        if (!cache.Items.TryGetValue(fileInfo.FullName, out var cached)
+            || cached.FileSizeBytes != fileInfo.Length
+            || cached.LastWriteTimeUtcTicks != fileInfo.LastWriteTimeUtc.Ticks)
+        {
+            return false;
+        }
+
+        image = new AnalyzedImage(
+            cached.Path,
+            cached.Format,
+            cached.FileSizeBytes,
+            cached.LastWriteTimeUtcTicks,
+            cached.Width,
+            cached.Height,
+            cached.PixelCount,
+            cached.Md5,
+            cached.PerceptualHash,
+            cached.TakenAt);
+
+        return true;
+    }
+
+    private static CachedAnalyzedImage ToCacheItem(AnalyzedImage image)
+    {
+        return new CachedAnalyzedImage(
+            image.Path,
+            image.Format,
+            image.FileSizeBytes,
+            image.LastWriteTimeUtcTicks,
+            image.Width,
+            image.Height,
+            image.PixelCount,
+            image.Md5,
+            image.PerceptualHash,
+            image.TakenAt);
+    }
+
+    private static void SaveAnalysisCache(string cachePath, AnalysisCache cache)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        File.WriteAllText(cachePath, JsonSerializer.Serialize(cache, CacheJsonOptions));
+    }
+
+    private static string GetAnalysisCachePath(ScanOptions options) => ScanAnalysisCache.GetCachePath(options);
 
     private static bool TryAnalyzeImage(string path, PhotoHashAlgorithm hashAlgorithm, out AnalyzedImage image)
     {
@@ -267,6 +418,7 @@ public sealed class DuplicateScanService : IDuplicateScanService
                 path,
                 GetFormat(path),
                 fileInfo.Length,
+                fileInfo.LastWriteTimeUtc.Ticks,
                 bitmap.Width,
                 bitmap.Height,
                 bitmap.Width * bitmap.Height,
@@ -593,6 +745,26 @@ public sealed class DuplicateScanService : IDuplicateScanService
         string Path,
         string Format,
         long FileSizeBytes,
+        long LastWriteTimeUtcTicks,
+        int Width,
+        int Height,
+        int PixelCount,
+        string Md5,
+        ulong PerceptualHash,
+        DateTimeOffset? TakenAt);
+
+    private sealed record AnalysisCache(
+        int SchemaVersion,
+        string SourceFolder,
+        bool IncludeSubfolders,
+        PhotoHashAlgorithm HashAlgorithm,
+        Dictionary<string, CachedAnalyzedImage> Items);
+
+    private sealed record CachedAnalyzedImage(
+        string Path,
+        string Format,
+        long FileSizeBytes,
+        long LastWriteTimeUtcTicks,
         int Width,
         int Height,
         int PixelCount,
